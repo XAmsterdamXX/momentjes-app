@@ -385,8 +385,8 @@ input, textarea, select { font-family: inherit; font-size: 16px; color: var(--te
 .ctrl-btn .icon { width: 24px; height: 24px; }
 .ctrl-main {
   width: 78px; height: 78px;
-  background: linear-gradient(150deg, #F0788D, var(--record-deep));
-  box-shadow: 0 10px 26px rgba(232, 93, 117, 0.45);
+  background: linear-gradient(150deg, #5BC08A, var(--save));
+  box-shadow: 0 10px 26px rgba(76, 175, 125, 0.45);
 }
 .ctrl-main .icon { width: 30px; height: 30px; }
 
@@ -440,7 +440,22 @@ input, textarea, select { font-family: inherit; font-size: 16px; color: var(--te
 .field input:focus, .field textarea:focus { border-color: var(--record); }
 .field textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
 .field-row { display: flex; gap: 10px; }
-.field-row .field { flex: 1; }
+.field-row .field { flex: 1; min-width: 0; }
+/* iOS geeft datum/tijd-velden een eigen (groter) uiterlijk dat uit de
+   vakken barst — dwing ons eigen rustige uiterlijk af */
+.field input[type="date"], .field input[type="time"] {
+  -webkit-appearance: none; appearance: none;
+  min-width: 0; max-width: 100%;
+  height: 47px;
+  font-size: 15px;
+  color: var(--text);
+  text-align: left;
+  -webkit-text-fill-color: var(--text);
+}
+.field input[type="date"]::-webkit-date-and-time-value,
+.field input[type="time"]::-webkit-date-and-time-value {
+  text-align: left; margin: 0;
+}
 
 .cat-select { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cat-option {

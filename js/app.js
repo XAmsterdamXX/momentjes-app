@@ -433,10 +433,41 @@
   });
 
   // ============ Bewaren ============
+  /* Spraakherkenning levert kale tekst zonder leestekens — maak er
+     leesbare zinnen van: hoofdletter, punt aan het einde. */
+  function polishTranscript(t) {
+    if (!t) return '';
+    let s = t.trim().replace(/\s+/g, ' ');
+    s = s[0].toUpperCase() + s.slice(1);
+    if (!/[.!?…]$/.test(s)) s += '.';
+    return s;
+  }
+
+  /* Titel-heuristiek: kernwoorden overhouden (zoals "2x leven" of
+     "Lasergamen") — stopwoorden en de kindnaam eruit, de eerste paar
+     betekenisvolle woorden blijven in volgorde staan. */
+  const TITLE_STOPWORDS = new Set(('de het een en of maar want dus dat die dit deze ik je jij hij zij ze we wij me mij hem haar ons jullie u ' +
+    'is was zijn waren ben bent wordt worden werd heb hebt heeft hebben had hadden doe doet doen deed ' +
+    'ga gaat gaan ging gingen gegaan geweest kom komt komen kwam gekomen wil wilt willen wilde kan kunt kunnen kon ' +
+    'moet moeten moest mag mogen mocht zal zult zullen zou zouden niet wel ook nog al toch heel erg zo zon ' +
+    'naar van voor met bij op in uit aan af om over onder tussen tegen door per te ter dan toen nu hier daar er ' +
+    'waar wat wie hoe waarom omdat terwijl als zei zegt zeggen gezegd vroeg vraagt vragen vertelde vertelt vertellen ' +
+    'vandaag vanochtend vanmiddag vanavond vanmorgen gisteren eergisteren net zonet zojuist even gewoon eerst weer steeds ' +
+    'nou dus oké oke eh uh ehm uhm ja nee hoi hallo mijn jouw zijn haar hun ie t m dr zn ze').split(' '));
   function autoTitle(text) {
     if (!text) return '';
-    const words = text.trim().split(/\s+/).slice(0, 6).join(' ');
-    return words.length > 42 ? words.slice(0, 42) + '…' : words;
+    const words = text.replace(/[.!?…,;:'"„”]+/g, ' ').split(/\s+/).filter(Boolean);
+    const childNames = new Set(S.children.map(c => c.name.toLowerCase()));
+    const content = words.filter(w => {
+      const lw = w.toLowerCase();
+      return !TITLE_STOPWORDS.has(lw) && !childNames.has(lw);
+    });
+    let picked = content.slice(0, 3);
+    if (picked.length < 2) picked = words.slice(0, 6);
+    let t = picked.join(' ');
+    if (!t) return '';
+    t = t[0].toUpperCase() + t.slice(1);
+    return t.length > 42 ? t.slice(0, 42) + '…' : t;
   }
 
   function dateInputValues(d = new Date()) {
@@ -469,9 +500,7 @@
     if (S.children.length < 2) return '';
     return `<div class="field"><label>Voor wie</label><div class="chip-row" id="child-select">
       ${S.children.map(c => `
-        <button type="button" class="filter-chip ${c.id === selectedId ? 'active' : ''}" data-child="${c.id}" style="--accent:${c.color}">
-          <span class="child-dot" style="background:${c.color};width:18px;height:18px;font-size:10px">${esc(c.name[0].toUpperCase())}</span>${esc(c.name)}
-        </button>`).join('')}
+        <button type="button" class="filter-chip ${c.id === selectedId ? 'active' : ''}" data-child="${c.id}" style="--accent:${c.color}">${esc(c.name)}</button>`).join('')}
     </div></div>`;
   }
   function bindChildSelect() {
@@ -512,6 +541,7 @@
   }
 
   function openSaveSheet(recording) {
+    recording.transcript = polishTranscript(recording.transcript);
     const now = new Date();
     const { date, time } = dateInputValues(now);
     const fallbackTitle = `Momentje van ${WEEKDAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()].slice(0, 3)}`;
