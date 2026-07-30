@@ -165,41 +165,6 @@ input, textarea, select { font-family: inherit; font-size: 16px; color: var(--te
 }
 .record-hint { margin-top: 14px; font-size: 13px; color: var(--text-soft); }
 
-/* Kleine geometrische vormen die om de knop zweven */
-.record-accents { position: absolute; inset: 0; pointer-events: none; }
-.record-accents i { position: absolute; display: block; opacity: 0.75; }
-.record-accents i:nth-child(1) {
-  width: 14px; height: 14px; border-radius: 4px;
-  background: var(--cat-uitspraak);
-  left: calc(50% - 96px); top: 34px;
-  transform: rotate(45deg);
-  animation: floaty 5.5s ease-in-out infinite;
-}
-.record-accents i:nth-child(2) {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--cat-vraag);
-  right: calc(50% - 92px); top: 96px;
-  animation: floaty 6.5s ease-in-out 0.8s infinite;
-}
-.record-accents i:nth-child(3) {
-  width: 12px; height: 12px;
-  background: var(--cat-ervaring);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  left: calc(50% - 78px); top: 128px;
-  animation: floaty 7s ease-in-out 1.6s infinite;
-}
-.record-accents i:nth-child(4) {
-  width: 9px; height: 9px; border-radius: 3px;
-  background: var(--cat-mijlpaal);
-  right: calc(50% - 74px); top: 28px;
-  transform: rotate(20deg);
-  animation: floaty 6s ease-in-out 2.3s infinite;
-}
-@keyframes floaty {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -12px; }
-}
-
 /* ============ Cards ============ */
 .cards { display: flex; flex-direction: column; gap: 12px; }
 
