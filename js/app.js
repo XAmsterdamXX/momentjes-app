@@ -13,6 +13,7 @@
 
   const MONTHS = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
   const WEEKDAYS = ['zo','ma','di','wo','do','vr','za'];
+  const WEEKDAYS_FULL = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
 
   const fmtTime = (secs) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
 
@@ -23,10 +24,8 @@
   function fmtDateShort(iso) {
     const d = new Date(iso);
     const now = new Date();
-    const today = now.toDateString() === d.toDateString();
-    const yesterday = new Date(now - 864e5).toDateString() === d.toDateString();
-    if (today) return 'vandaag';
-    if (yesterday) return 'gisteren';
+    if (now.toDateString() === d.toDateString()) return 'vandaag';
+    if (new Date(now - 864e5).toDateString() === d.toDateString()) return 'gisteren';
     return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}${d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : ''}`;
   }
 
@@ -42,13 +41,32 @@
     toast._id = setTimeout(() => { t.hidden = true; }, ms);
   }
 
+  /* Nette in-app bevestiging (geen systeem-popup met domeinnaam erboven) */
+  function appConfirm(text, { confirmText = 'OK', danger = false } = {}) {
+    return new Promise((resolve) => {
+      const bd = $('#dialog-backdrop');
+      const btn = $('#dialog-confirm');
+      $('#dialog-text').textContent = text;
+      btn.textContent = confirmText;
+      btn.classList.toggle('dialog-danger', danger);
+      bd.hidden = false;
+      const done = (val) => {
+        bd.hidden = true;
+        btn.onclick = null; $('#dialog-cancel').onclick = null; bd.onclick = null;
+        resolve(val);
+      };
+      btn.onclick = () => done(true);
+      $('#dialog-cancel').onclick = () => done(false);
+      bd.onclick = (e) => { if (e.target === bd) done(false); };
+    });
+  }
+
   // ============ State ============
   const S = {
     children: [], categories: [], memories: [],
     activeChildId: null,
     tab: 'home',
     searchQuery: '', searchCat: null, searchFav: false,
-    editingMemory: null,
   };
 
   const catById = (id) => S.categories.find(c => c.id === id);
@@ -110,20 +128,24 @@
   };
 
   // ============ Memory cards ============
-  function cardHTML(m, i = 0) {
+  /* Kaartjes blijven visueel: icoon + kleur vertellen de categorie,
+     dus geen categorienaam in tekst. Datum alleen waar de context die
+     niet al laat zien (dus niet in de tijdlijn). */
+  function cardHTML(m, i = 0, opts = {}) {
+    const showDate = opts.date !== false;
     const cat = catById(m.categoryId) || {};
+    const meta = [
+      m.isFavorite ? `<span class="memory-fav">${svg('i-heart')}</span>` : '',
+      showDate ? `<span>${fmtDateShort(m.date)}</span>` : '',
+      m.audioDuration ? `<span>${fmtTime(m.audioDuration)}</span>` : '',
+    ].filter(Boolean).join('<span class="meta-dot">·</span>');
     return `
       <button class="memory-card" data-memory="${m.id}" style="--accent:${cat.color || '#A5A5AE'}; animation-delay:${Math.min(i * 45, 300)}ms">
         <span class="cat-icon">${svg(catIcon(cat))}</span>
         <span class="memory-body">
           <span class="memory-title">${esc(m.title || 'Momentje')}</span>
           ${m.text ? `<span class="memory-text">${esc(m.text)}</span>` : ''}
-          <span class="memory-meta">
-            ${m.isFavorite ? `<span class="memory-fav">${svg('i-heart')}</span>` : ''}
-            <span>${fmtDateShort(m.date)}</span>
-            ${m.audioDuration ? `<span>·</span><span>${fmtTime(m.audioDuration)}</span>` : ''}
-            <span>·</span><span>${esc(cat.name || '')}</span>
-          </span>
+          ${meta ? `<span class="memory-meta">${meta}</span>` : ''}
         </span>
         ${m.audioId ? `<span class="play-chip" data-play="${m.id}" style="--accent:${cat.color || '#E85D75'}" role="button" aria-label="Afspelen">${svg('i-play')}</span>` : ''}
       </button>`;
@@ -153,15 +175,14 @@
     <div class="empty">
       <div class="empty-art">${svg('i-sparkle')}</div>
       <strong>Nog geen momentjes</strong>
-      <span>Tik op de grote knop en leg je eerste momentje vast — een grappige uitspraak, een vraag, een klein wonder.</span>
+      <span>Tik op de grote knop en vertel je eerste momentje.</span>
     </div>`;
 
   // ============ Home ============
   function renderHome() {
     const child = activeChild();
-    const h = new Date().getHours();
-    const dagdeel = h < 6 ? 'Goedenacht' : h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond';
-    $('#home-greeting').textContent = `${dagdeel} — de mooiste momenten van ${child ? child.name : 'je kind'}`;
+    const now = new Date();
+    $('#home-greeting').textContent = `${WEEKDAYS_FULL[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
 
     const chip = $('#home-child-chip');
     if (S.children.length > 0 && child) {
@@ -182,14 +203,15 @@
 
   async function renderBackupNudge(count) {
     const nudge = $('#backup-nudge');
+    const intervalDays = await DB.getSetting('backupReminderDays', 21);
     const last = await DB.getSetting('lastBackupAt');
     const dismissed = await DB.getSetting('nudgeDismissedAt');
     let show = false, text = '';
-    if (count >= 3) {
-      if (!last) { show = true; text = `Je hebt ${count} momentjes die alleen op dit toestel staan.`; }
+    if (intervalDays > 0 && count >= 3) {
+      if (!last) { show = true; text = `${count} momentjes staan alleen op dit toestel.`; }
       else {
         const days = Math.floor((Date.now() - new Date(last)) / 864e5);
-        if (days >= 21) { show = true; text = `Je laatste backup was ${days} dagen geleden.`; }
+        if (days >= intervalDays) { show = true; text = `Je laatste backup was ${days} dagen geleden.`; }
       }
     }
     if (dismissed && Date.now() - new Date(dismissed) < 7 * 864e5) show = false;
@@ -207,7 +229,6 @@
     const list = $('#timeline-list');
     if (mems.length === 0) { list.innerHTML = EMPTY_HOME; return; }
 
-    // Groepeer per maand, daarbinnen per dag
     const byMonth = new Map();
     for (const m of mems) {
       const d = new Date(m.date);
@@ -229,7 +250,7 @@
         html += `
           <div class="timeline-row">
             <div class="day-chip"><div class="d">${day}</div><div class="wd">${wd}</div></div>
-            <div class="cards">${dayMems.map(m => cardHTML(m, i++)).join('')}</div>
+            <div class="cards">${dayMems.map(m => cardHTML(m, i++, { date: false })).join('')}</div>
           </div>`;
       }
       html += `</div>`;
@@ -281,8 +302,13 @@
   }
 
   // ============ Sheet-infrastructuur ============
-  function openSheet(html) {
+  let sheetCleanup = null;
+  let sheetLocked = false; // vergrendeld: sluiten kan alleen via een knop (bewaarscherm)
+
+  function openSheet(html, { locked = false } = {}) {
     Player.stopAll();
+    if (sheetCleanup) { sheetCleanup(); sheetCleanup = null; }
+    sheetLocked = locked;
     $('#sheet-content').innerHTML = html;
     $('#sheet').hidden = false;
     $('#sheet-backdrop').hidden = false;
@@ -293,26 +319,35 @@
     const sheet = $('#sheet'), bd = $('#sheet-backdrop');
     if (sheet.hidden) return;
     Player.stopAll();
+    if (sheetCleanup) { sheetCleanup(); sheetCleanup = null; }
+    sheetLocked = false;
     sheet.classList.add('closing'); bd.classList.add('closing');
     setTimeout(() => { sheet.hidden = true; bd.hidden = true; }, 240);
   }
-  $('#sheet-backdrop').addEventListener('click', closeSheet);
+  $('#sheet-backdrop').addEventListener('click', () => { if (!sheetLocked) closeSheet(); });
 
   // ============ Opnemen ============
-  let rec = null, speech = null;
+  let rec = null, speech = null, recStarting = false;
 
   async function startRecording() {
+    if (rec || recStarting) return;
     if (!Recorder.supported()) {
       toast('Opnemen wordt niet ondersteund in deze browser');
       return;
     }
-    rec = Recorder.create();
-    try { await rec.start(); }
+    recStarting = true;
+    $('#record-btn').classList.add('busy');
+    const r = Recorder.create();
+    try { await r.start(); }
     catch (err) {
-      toast('Geen toegang tot de microfoon — check je instellingen');
-      rec = null;
+      recStarting = false;
+      $('#record-btn').classList.remove('busy');
+      toast('Geen toegang tot de microfoon — check Instellingen › Momentjes › Microfoon');
       return;
     }
+    rec = r;
+    recStarting = false;
+    $('#record-btn').classList.remove('busy');
 
     const overlay = $('#record-overlay');
     overlay.hidden = false;
@@ -321,10 +356,10 @@
     $('#transcript-placeholder').hidden = false;
     $('#speech-note').hidden = true;
     $('.rec-dot').classList.remove('paused');
-    const pauseBtn = $('#record-pause');
-    pauseBtn.querySelector('use').setAttribute('href', '#i-pause');
+    $('#record-pause use').setAttribute('href', '#i-pause');
 
-    // Golfjes
+    // Golfjes — en als de meter niks doorgeeft (sommige iPhones), dan
+    // ademen ze zachtjes mee op de tijd zodat het tóch leeft.
     const wave = $('#wave');
     if (!wave.children.length) {
       for (let i = 0; i < 28; i++) wave.appendChild(document.createElement('i'));
@@ -333,14 +368,19 @@
 
     rec.onTick = (ms) => { $('#record-timer').textContent = fmtTime(ms / 1000); };
     rec.onLevel = (data) => {
-      const step = Math.floor(data.length / bars.length);
-      bars.forEach((b, i) => {
-        const v = data[i * step] / 255;
-        b.style.height = `${8 + Math.round(v * 56)}px`;
-      });
+      let max = 0;
+      if (data) { const step = Math.floor(data.length / bars.length); for (let i = 0; i < bars.length; i++) max = Math.max(max, data[i * step]); }
+      if (data && max > 6) {
+        const step = Math.floor(data.length / bars.length);
+        bars.forEach((b, i) => { b.style.height = `${8 + Math.round((data[i * step] / 255) * 56)}px`; });
+      } else {
+        const t = Date.now() / 320;
+        bars.forEach((b, i) => { b.style.height = `${10 + Math.round(7 * (1 + Math.sin(t + i * 0.55)))}px`; });
+      }
     };
 
-    // Live meeschrijven (best effort)
+    // Live meeschrijven (best effort) — iets ná de opnamestart, zodat de
+    // microfoonsessie eerst rustig staat
     speech = Speech.create('nl-NL');
     if (speech) {
       speech.onUpdate = (final, interim) => {
@@ -349,8 +389,9 @@
         const box = $('#live-transcript');
         box.scrollTop = box.scrollHeight;
       };
-      speech.onUnavailable = () => { $('#speech-note').hidden = false; };
-      speech.start();
+      speech.onUnavailable = () => { if (rec === r) $('#speech-note').hidden = false; };
+      const sp = speech;
+      setTimeout(() => { if (rec === r && speech === sp) sp.start(); }, 350);
     } else {
       $('#speech-note').hidden = false;
     }
@@ -359,24 +400,24 @@
   async function stopRecording(save) {
     if (!rec) return;
     const theRec = rec; rec = null;
-    if (speech) { speech.stop(); }
-    const transcript = speech ? speech.text : '';
-    speech = null;
+    const sp = speech; speech = null;
+    if (sp) { if (save) sp.stop(); else sp.abort(); }
+    const transcript = sp ? sp.text : '';
     $('#record-overlay').hidden = true;
 
     if (!save) { theRec.cancel(); return; }
     const result = await theRec.stop();
-    if (!result || !result.blob || result.blob.size === 0) {
-      toast('Er is niets opgenomen');
-      return;
-    }
+    if (!result) { toast('Er is niets opgenomen'); return; }
     openSaveSheet({ blob: result.blob, mime: result.mime, duration: result.duration, transcript });
   }
 
   $('#record-btn').addEventListener('click', startRecording);
   $('#record-stop').addEventListener('click', () => stopRecording(true));
-  $('#record-cancel').addEventListener('click', () => {
-    if (confirm('Opname weggooien?')) stopRecording(false);
+  $('#record-cancel').addEventListener('click', async () => {
+    if (!rec) return;
+    if (await appConfirm('Deze opname weggooien?', { confirmText: 'Weggooien', danger: true })) {
+      stopRecording(false);
+    }
   });
   $('#record-pause').addEventListener('click', () => {
     if (!rec) return;
@@ -424,19 +465,73 @@
   }
   const selectedCat = () => $('#cat-select .cat-option.active')?.dataset.cat || S.categories[0]?.id;
 
+  function childSelectHTML(selectedId) {
+    if (S.children.length < 2) return '';
+    return `<div class="field"><label>Voor wie</label><div class="chip-row" id="child-select">
+      ${S.children.map(c => `
+        <button type="button" class="filter-chip ${c.id === selectedId ? 'active' : ''}" data-child="${c.id}" style="--accent:${c.color}">
+          <span class="child-dot" style="background:${c.color};width:18px;height:18px;font-size:10px">${esc(c.name[0].toUpperCase())}</span>${esc(c.name)}
+        </button>`).join('')}
+    </div></div>`;
+  }
+  function bindChildSelect() {
+    const box = $('#child-select');
+    if (!box) return;
+    box.querySelectorAll('[data-child]').forEach(b => b.addEventListener('click', () => {
+      box.querySelectorAll('[data-child]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    }));
+  }
+  const selectedChild = () => $('#child-select .filter-chip.active')?.dataset.child || S.activeChildId;
+
+  /* Kleine losse audiospeler (voor het bewaarscherm — even terugluisteren
+     voordat je opslaat) */
+  function bindPreviewPlayer(rootSel, blob, duration) {
+    const chip = $(`${rootSel} .play-chip`);
+    const bar = $(`${rootSel} .audio-progress i`);
+    const time = $(`${rootSel} .audio-time`);
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    let raf = null;
+    const setIcon = (playing) => {
+      chip.classList.toggle('playing', playing);
+      chip.querySelector('use').setAttribute('href', playing ? '#i-pause' : '#i-play');
+    };
+    const tick = () => {
+      const dur = audio.duration && isFinite(audio.duration) ? audio.duration : duration;
+      if (dur) bar.style.width = `${(audio.currentTime / dur) * 100}%`;
+      time.textContent = fmtTime(audio.currentTime);
+      raf = requestAnimationFrame(tick);
+    };
+    audio.onended = () => { cancelAnimationFrame(raf); setIcon(false); bar.style.width = '0%'; time.textContent = fmtTime(duration || 0); };
+    chip.addEventListener('click', () => {
+      if (audio.paused) { audio.play().then(() => { setIcon(true); tick(); }).catch(() => toast('Audio kan niet worden afgespeeld')); }
+      else { audio.pause(); cancelAnimationFrame(raf); setIcon(false); }
+    });
+    return () => { try { audio.pause(); } catch (_) {} cancelAnimationFrame(raf); URL.revokeObjectURL(url); };
+  }
+
   function openSaveSheet(recording) {
-    const { date, time } = dateInputValues();
-    const child = activeChild();
+    const now = new Date();
+    const { date, time } = dateInputValues(now);
+    const fallbackTitle = `Momentje van ${WEEKDAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()].slice(0, 3)}`;
+    const title = autoTitle(recording.transcript) || fallbackTitle;
     openSheet(`
       <h2 class="sheet-title">Momentje bewaren</h2>
+      <div class="audio-player" id="save-player" style="--accent:#E85D75">
+        <span class="play-chip" style="--accent:#E85D75">${svg('i-play')}</span>
+        <div class="audio-progress"><i></i></div>
+        <span class="audio-time">${fmtTime(recording.duration || 0)}</span>
+      </div>
       <div class="field">
         <label>Titel</label>
-        <input type="text" id="save-title" value="${esc(autoTitle(recording.transcript))}" placeholder="Bijv. ‘Waarom is de maan rond?’">
+        <input type="text" id="save-title" value="${esc(title)}">
       </div>
       <div class="field">
         <label>Wat werd er gezegd of gedaan?</label>
-        <textarea id="save-text" placeholder="${recording.transcript ? '' : 'Typ hier wat er gebeurde — de audio blijft er altijd bij.'}">${esc(recording.transcript)}</textarea>
+        <textarea id="save-text" placeholder="${recording.transcript ? '' : 'Luister terug en typ hier wat er gebeurde — de audio blijft er altijd bij.'}">${esc(recording.transcript)}</textarea>
       </div>
+      ${childSelectHTML(S.activeChildId)}
       <div class="field">
         <label>Categorie</label>
         ${catSelectHTML(S.categories[0]?.id)}
@@ -446,13 +541,16 @@
         <div class="field"><label>Tijd</label><input type="time" id="save-time" value="${time}"></div>
       </div>
       <div class="btn-stack">
-        <button class="btn" id="save-confirm">${svg('i-check')}Bewaren${child ? ' voor ' + esc(child.name) : ''}</button>
+        <button class="btn" id="save-confirm">${svg('i-check')}Bewaren</button>
         <button class="btn btn-danger" id="save-discard">Opname weggooien</button>
       </div>
-    `);
+    `, { locked: true });
     bindCatSelect();
-    $('#save-discard').addEventListener('click', () => {
-      if (confirm('Weet je zeker dat je deze opname wilt weggooien?')) closeSheet();
+    bindChildSelect();
+    sheetCleanup = bindPreviewPlayer('#save-player', recording.blob, recording.duration);
+
+    $('#save-discard').addEventListener('click', async () => {
+      if (await appConfirm('Weet je zeker dat je deze opname wilt weggooien?', { confirmText: 'Weggooien', danger: true })) closeSheet();
     });
     $('#save-confirm').addEventListener('click', async () => {
       const id = DB.uuid();
@@ -461,9 +559,9 @@
       const when = new Date(`${$('#save-date').value}T${$('#save-time').value || '12:00'}`);
       const memory = {
         id,
-        childId: S.activeChildId,
+        childId: selectedChild(),
         categoryId: selectedCat(),
-        title: $('#save-title').value.trim() || autoTitle($('#save-text').value) || 'Momentje',
+        title: $('#save-title').value.trim() || autoTitle($('#save-text').value) || fallbackTitle,
         text: $('#save-text').value.trim(),
         date: (isNaN(when) ? new Date() : when).toISOString(),
         createdAt: new Date().toISOString(),
@@ -536,7 +634,7 @@
 
     $('#detail-edit').addEventListener('click', () => openEdit(id));
     $('#detail-delete').addEventListener('click', async () => {
-      if (!confirm(`"${m.title}" verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+      if (!(await appConfirm(`"${m.title}" verwijderen? Dit kan niet ongedaan worden gemaakt.`, { confirmText: 'Verwijderen', danger: true }))) return;
       if (m.audioId) await DB.del('audio', m.audioId);
       await DB.del('memories', m.id);
       await loadAll();
@@ -555,6 +653,7 @@
       <h2 class="sheet-title">Momentje bewerken</h2>
       <div class="field"><label>Titel</label><input type="text" id="edit-title" value="${esc(m.title)}"></div>
       <div class="field"><label>Tekst</label><textarea id="edit-text">${esc(m.text || '')}</textarea></div>
+      ${childSelectHTML(m.childId)}
       <div class="field"><label>Categorie</label>${catSelectHTML(m.categoryId)}</div>
       <div class="field-row">
         <div class="field"><label>Datum</label><input type="date" id="edit-date" value="${date}"></div>
@@ -566,11 +665,13 @@
       </div>
     `);
     bindCatSelect();
+    bindChildSelect();
     $('#edit-cancel').addEventListener('click', () => openDetail(id));
     $('#edit-save').addEventListener('click', async () => {
       m.title = $('#edit-title').value.trim() || m.title;
       m.text = $('#edit-text').value.trim();
       m.categoryId = selectedCat();
+      m.childId = selectedChild() || m.childId;
       const when = new Date(`${$('#edit-date').value}T${$('#edit-time').value || '12:00'}`);
       if (!isNaN(when)) m.date = when.toISOString();
       await DB.put('memories', m);
@@ -649,7 +750,10 @@
     const delBtn = $('#child-delete');
     if (delBtn) delBtn.addEventListener('click', async () => {
       const count = S.memories.filter(m => m.childId === child.id).length;
-      if (!confirm(`${child.name} verwijderen?${count ? ` De ${count} bijbehorende momentjes worden ook verwijderd.` : ''} Dit kan niet ongedaan worden gemaakt.`)) return;
+      const ok = await appConfirm(
+        `${child.name} verwijderen?${count ? ` De ${count} bijbehorende momentjes worden ook verwijderd.` : ''} Dit kan niet ongedaan worden gemaakt.`,
+        { confirmText: 'Verwijderen', danger: true });
+      if (!ok) return;
       for (const m of S.memories.filter(m => m.childId === child.id)) {
         if (m.audioId) await DB.del('audio', m.audioId);
         await DB.del('memories', m.id);
@@ -665,6 +769,7 @@
   // ============ Instellingen ============
   async function renderSettings() {
     const last = await DB.getSetting('lastBackupAt');
+    const reminderDays = await DB.getSetting('backupReminderDays', 21);
     const est = await DB.storageEstimate();
     const persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : false;
     const usedMB = est && est.usage ? (est.usage / 1048576).toFixed(1) : null;
@@ -698,6 +803,19 @@
             <span class="grow">Backup terugzetten<span class="sub">Zet momentjes terug op dit of een nieuw toestel</span></span>
             ${svg('i-back', 'icon chevron')}
           </button>
+          <div class="settings-row" style="cursor:default">
+            ${svg('i-clock')}
+            <span class="grow">Herinner mij<span class="sub">Een vriendelijk seintje op het homescherm</span></span>
+            <select id="backup-interval" class="settings-select">
+              <option value="7" ${reminderDays === 7 ? 'selected' : ''}>Wekelijks</option>
+              <option value="21" ${reminderDays === 21 ? 'selected' : ''}>Elke 3 weken</option>
+              <option value="0" ${!reminderDays ? 'selected' : ''}>Nooit</option>
+            </select>
+          </div>
+          <div class="privacy-note">
+            ${svg('i-import')}
+            <span><strong>Tip:</strong> kies bij het backuppen “Bewaar in Bestanden” en zet hem in iCloud Drive — dan staat je backup automatisch veilig in je eigen iCloud. Je iPhone neemt appgegevens meestal ook mee in de iCloud-reservekopie van het toestel, maar een eigen backup-bestand is de enige échte zekerheid.</span>
+          </div>
         </div>
       </div>
 
@@ -706,7 +824,7 @@
         <div class="settings-card">
           <div class="privacy-note">
             ${svg('i-lock')}
-            <span>Alle momentjes — audio én tekst — staan <strong>alleen op dit toestel</strong>. Er is geen account, geen server en geen tracking. Maak regelmatig een backup naar je eigen iCloud/Bestanden; alleen jij kunt erbij.${usedMB ? `<br><br>Opslag in gebruik: ${usedMB} MB${persisted ? ' · beschermd tegen automatisch opruimen ✓' : ''}` : ''}</span>
+            <span>Alle momentjes — audio én tekst — staan <strong>alleen op dit toestel</strong>. Er is geen account, geen server en geen tracking.${usedMB ? `<br><br>Opslag in gebruik: ${usedMB} MB${persisted ? ' · beschermd tegen automatisch opruimen ✓' : ''}` : ''}</span>
           </div>
         </div>
       </div>
@@ -716,7 +834,7 @@
         <div class="settings-card">
           <div class="settings-row" style="cursor:default">
             ${svg('i-sparkle')}
-            <span class="grow">Momentjes<span class="sub">Versie 1.0 — gemaakt met liefde, voor de kleine grote momenten</span></span>
+            <span class="grow">Momentjes<span class="sub">Versie 1.1 — gemaakt met liefde, voor de kleine grote momenten</span></span>
           </div>
         </div>
       </div>
@@ -727,6 +845,10 @@
     $('#settings-add-child').addEventListener('click', () => openChildForm());
     $('#settings-export').addEventListener('click', doExport);
     $('#settings-import').addEventListener('click', () => $('#import-file').click());
+    $('#backup-interval').addEventListener('change', async (e) => {
+      await DB.setSetting('backupReminderDays', parseInt(e.target.value, 10));
+      renderHome();
+    });
   }
 
   async function doExport() {
@@ -794,19 +916,19 @@
       $('#onboarding-inner').innerHTML = `
         <div class="ob-mark">${svg('i-mic')}</div>
         <h1 class="ob-title">Momentjes</h1>
-        <p class="ob-lead">De grappige uitspraken, grote vragen en kleine wonderen van je kind — vastgelegd in hun eigen stemmetje, voordat je ze vergeet.</p>
+        <p class="ob-lead">De grappige uitspraken, grote vragen en kleine wonderen van je kind — bewaard voordat je ze vergeet.</p>
         <div class="ob-points">
           <div class="ob-point">
             <span class="ob-point-icon" style="background:#4D99E6">${svg('i-mic')}</span>
-            <div><strong>Opnemen in 1 tik</strong><span>De app schrijft live mee terwijl je vertelt (of je kind zelf praat).</span></div>
+            <div><strong>Vertel het in 1 tik</strong><span>Jij vertelt, de app schrijft mee.</span></div>
           </div>
           <div class="ob-point">
             <span class="ob-point-icon" style="background:#66BB6A">${svg('i-lock')}</span>
-            <div><strong>100% privé</strong><span>Alles blijft op jouw telefoon. Geen account, geen cloud, geen tracking.</span></div>
+            <div><strong>100% privé</strong><span>Alles blijft op jouw telefoon.</span></div>
           </div>
           <div class="ob-point">
             <span class="ob-point-icon" style="background:#E6667F">${svg('i-heart')}</span>
-            <div><strong>Voor later</strong><span>Een tijdlijn vol momentjes om samen terug te luisteren — ook over 20 jaar.</span></div>
+            <div><strong>Voor later</strong><span>Samen terugluisteren, ook over 20 jaar.</span></div>
           </div>
         </div>
         <button class="btn btn-coral" id="ob-next">Beginnen</button>
@@ -817,7 +939,7 @@
     function step2() {
       $('#onboarding-inner').innerHTML = `
         <div class="ob-mark" style="background:linear-gradient(150deg,#6FADE9,#4D99E6)">${svg('i-child')}</div>
-        <h1 class="ob-title">Van wie bewaren we momentjes?</h1>
+        <h1 class="ob-title">Over wie gaan je momentjes?</h1>
         <p class="ob-lead">Je kunt er later altijd meer kinderen bij zetten.</p>
         <div class="field">
           <label>Naam</label>
@@ -874,4 +996,7 @@
   }
 
   init();
+
+  // Testhaakje — alleen actief bij lokaal ontwikkelen
+  if (location.hostname === 'localhost') window.__test = { openSaveSheet, appConfirm };
 })();

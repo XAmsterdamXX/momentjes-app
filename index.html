@@ -80,11 +80,12 @@
         </div>
 
         <div class="record-zone">
+          <div class="record-accents" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
           <div class="record-rings" aria-hidden="true"><i></i><i></i><i></i></div>
           <button class="record-btn" id="record-btn" aria-label="Nieuw momentje opnemen">
             <svg class="icon"><use href="#i-mic"/></svg>
           </button>
-          <p class="record-hint">Tik om een momentje vast te leggen</p>
+          <p class="record-hint">Tik en vertel</p>
         </div>
 
         <div class="section-head">
@@ -130,10 +131,10 @@
 
     <!-- Tab bar -->
     <nav class="tabbar" aria-label="Hoofdnavigatie">
-      <button class="tab active" data-tab="home"><svg class="icon"><use href="#i-home"/></svg><span>Home</span></button>
-      <button class="tab" data-tab="timeline"><svg class="icon"><use href="#i-clock"/></svg><span>Tijdlijn</span></button>
-      <button class="tab" data-tab="search"><svg class="icon"><use href="#i-search"/></svg><span>Zoeken</span></button>
-      <button class="tab" data-tab="settings"><svg class="icon"><use href="#i-gear"/></svg><span>Meer</span></button>
+      <button class="tab active" data-tab="home" aria-label="Home"><svg class="icon"><use href="#i-home"/></svg><span>Home</span></button>
+      <button class="tab" data-tab="timeline" aria-label="Tijdlijn"><svg class="icon"><use href="#i-clock"/></svg><span>Tijdlijn</span></button>
+      <button class="tab" data-tab="search" aria-label="Zoeken"><svg class="icon"><use href="#i-search"/></svg><span>Zoeken</span></button>
+      <button class="tab" data-tab="settings" aria-label="Meer"><svg class="icon"><use href="#i-gear"/></svg><span>Meer</span></button>
     </nav>
   </div>
 
@@ -146,7 +147,7 @@
       </div>
       <div class="wave" id="wave" aria-hidden="true"></div>
       <div class="live-transcript" id="live-transcript">
-        <p class="transcript-placeholder" id="transcript-placeholder">Begin maar te vertellen…</p>
+        <p class="transcript-placeholder" id="transcript-placeholder">Vertel maar — ik schrijf met je mee…</p>
         <p id="transcript-text"></p>
       </div>
       <p class="speech-note" id="speech-note" hidden>Live meeschrijven lukt hier niet — je opname wordt gewoon bewaard en je kunt de tekst straks zelf typen.</p>
@@ -168,6 +169,17 @@
   <!-- ===== ONBOARDING ===== -->
   <div class="onboarding" id="onboarding" hidden>
     <div class="onboarding-inner" id="onboarding-inner"></div>
+  </div>
+
+  <!-- In-app dialoog (i.p.v. lelijke systeem-popups) -->
+  <div class="dialog-backdrop" id="dialog-backdrop" hidden>
+    <div class="dialog" role="alertdialog" aria-modal="true">
+      <p class="dialog-text" id="dialog-text"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-secondary" id="dialog-cancel">Annuleer</button>
+        <button class="btn" id="dialog-confirm"></button>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast" hidden></div>

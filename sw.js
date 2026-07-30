@@ -1,6 +1,6 @@
 /* Momentjes — service worker: de app werkt ook zonder internet. */
 
-const CACHE = 'momentjes-v1';
+const CACHE = 'momentjes-v2';
 const ASSETS = [
   './',
   './index.html',
